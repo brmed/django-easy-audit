@@ -64,7 +64,3 @@ def request_started_handler(sender, environ, **kwargs):
         remote_ip=environ[REMOTE_ADDR_HEADER],
         datetime=timezone.now()
     )
-
-
-if WATCH_REQUEST_EVENTS:
-    request_started.connect(request_started_handler, dispatch_uid='easy_audit_signals_request_started')
