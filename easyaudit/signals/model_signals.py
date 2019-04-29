@@ -50,54 +50,53 @@ def pre_save(sender, instance, raw, using, update_fields, **kwargs):
       return
     
     try:
-        with transaction.commit_on_success():
-            if not should_audit(instance):
+        if not should_audit(instance):
+            return False
+        object_json_repr = serializers.serialize("json", [instance])
+
+        if instance.pk is None:
+            created = True
+        else:
+            created = False
+
+        # created or updated?
+        if not created:
+            old_model = sender.objects.get(pk=instance.pk)
+            delta = model_delta(old_model, instance)
+            if delta is None:
                 return False
-            object_json_repr = serializers.serialize("json", [instance])
+            changed_fields = json.dumps(delta)
+            event_type = CRUDEvent.UPDATE
 
-            if instance.pk is None:
-                created = True
-            else:
-                created = False
+        # user
+        try:
+            user = get_current_user()
+            # validate that the user still exists
+            user = get_user_model().objects.get(pk=user.pk)
+        except:
+            user = None
 
-            # created or updated?
-            if not created:
-                old_model = sender.objects.get(pk=instance.pk)
-                delta = model_delta(old_model, instance)
-                if delta is None:
-                    return False
-                changed_fields = json.dumps(delta)
-                event_type = CRUDEvent.UPDATE
+        if isinstance(user, AnonymousUser):
+            user = None
 
-            # user
-            try:
-                user = get_current_user()
-                # validate that the user still exists
-                user = get_user_model().objects.get(pk=user.pk)
-            except:
-                user = None
+        # callbacks
+        kwargs['request'] = get_current_request()  # make request available for callbacks
+        create_crud_event = all(callback(instance, object_json_repr, created, raw, using, update_fields, **kwargs)
+                                for callback in CRUD_DIFFERENCE_CALLBACKS if callable(callback))
 
-            if isinstance(user, AnonymousUser):
-                user = None
-
-            # callbacks
-            kwargs['request'] = get_current_request()  # make request available for callbacks
-            create_crud_event = all(callback(instance, object_json_repr, created, raw, using, update_fields, **kwargs)
-                                    for callback in CRUD_DIFFERENCE_CALLBACKS if callable(callback))
-
-            # create crud event only if all callbacks returned True
-            if create_crud_event and not created:
-                crud_event = CRUDEvent.objects.create(
-                    event_type=event_type,
-                    object_repr=str(instance),
-                    object_json_repr=object_json_repr,
-                    changed_fields=changed_fields,
-                    content_type=ContentType.objects.get_for_model(instance),
-                    object_id=instance.pk,
-                    user=user,
-                    datetime=timezone.now(),
-                    user_pk_as_string=str(user.pk) if user else user
-                )
+        # create crud event only if all callbacks returned True
+        if create_crud_event and not created:
+            crud_event = CRUDEvent.objects.create(
+                event_type=event_type,
+                object_repr=str(instance),
+                object_json_repr=object_json_repr,
+                changed_fields=changed_fields,
+                content_type=ContentType.objects.get_for_model(instance),
+                object_id=instance.pk,
+                user=user,
+                datetime=timezone.now(),
+                user_pk_as_string=str(user.pk) if user else user
+            )
     except Exception:
         logger.exception('easy audit had a pre-save exception.')
 
@@ -109,45 +108,44 @@ def post_save(sender, instance, created, raw, using, update_fields, **kwargs):
       return
     
     try:
-        with transaction.commit_on_success():
-            if not should_audit(instance):
-                return False
-            object_json_repr = serializers.serialize("json", [instance])
+        if not should_audit(instance):
+            return False
+        object_json_repr = serializers.serialize("json", [instance])
 
-            # created or updated?
-            if created:
-                event_type = CRUDEvent.CREATE
+        # created or updated?
+        if created:
+            event_type = CRUDEvent.CREATE
 
-            # user
-            try:
-                user = get_current_user()
-                # validate that the user still exists
-                user = get_user_model().objects.get(pk=user.pk)
-            except:
-                user = None
+        # user
+        try:
+            user = get_current_user()
+            # validate that the user still exists
+            user = get_user_model().objects.get(pk=user.pk)
+        except:
+            user = None
 
-            if isinstance(user, AnonymousUser):
-                user = None
+        if isinstance(user, AnonymousUser):
+            user = None
 
-            # callbacks
-            kwargs['request'] = get_current_request()  # make request available for callbacks
-            create_crud_event = all(callback(instance, object_json_repr,
-                                    created, raw, using, update_fields, **kwargs)
-                                    for callback in CRUD_DIFFERENCE_CALLBACKS
-                                    if callable(callback))
+        # callbacks
+        kwargs['request'] = get_current_request()  # make request available for callbacks
+        create_crud_event = all(callback(instance, object_json_repr,
+                                created, raw, using, update_fields, **kwargs)
+                                for callback in CRUD_DIFFERENCE_CALLBACKS
+                                if callable(callback))
 
-            # create crud event only if all callbacks returned True
-            if create_crud_event and created:
-                crud_event = CRUDEvent.objects.create(
-                    event_type=event_type,
-                    object_repr=str(instance),
-                    object_json_repr=object_json_repr,
-                    content_type=ContentType.objects.get_for_model(instance),
-                    object_id=instance.pk,
-                    user=user,
-                    datetime=timezone.now(),
-                    user_pk_as_string=str(user.pk) if user else user
-                )
+        # create crud event only if all callbacks returned True
+        if create_crud_event and created:
+            crud_event = CRUDEvent.objects.create(
+                event_type=event_type,
+                object_repr=str(instance),
+                object_json_repr=object_json_repr,
+                content_type=ContentType.objects.get_for_model(instance),
+                object_id=instance.pk,
+                user=user,
+                datetime=timezone.now(),
+                user_pk_as_string=str(user.pk) if user else user
+            )
     except Exception:
         logger.exception('easy audit had a post-save exception.')
 
@@ -172,53 +170,52 @@ def _m2m_rev_field_name(model1, model2):
 def m2m_changed(sender, instance, action, reverse, model, pk_set, using, **kwargs):
     """https://docs.djangoproject.com/es/1.10/ref/signals/#m2m-changed"""
     try:
-        with transaction.commit_on_success():
-            if not should_audit(instance):
-                return False
+        if not should_audit(instance):
+            return False
 
-            if action not in ("post_add", "post_remove", "post_clear"):
-                return False
+        if action not in ("post_add", "post_remove", "post_clear"):
+            return False
 
-            object_json_repr = serializers.serialize("json", [instance])
+        object_json_repr = serializers.serialize("json", [instance])
 
-            if reverse:
-                event_type = CRUDEvent.M2M_CHANGE_REV
-                # add reverse M2M changes to event. must use json lib because
-                # django serializers ignore extra fields.
-                tmp_repr = json.loads(object_json_repr)
+        if reverse:
+            event_type = CRUDEvent.M2M_CHANGE_REV
+            # add reverse M2M changes to event. must use json lib because
+            # django serializers ignore extra fields.
+            tmp_repr = json.loads(object_json_repr)
 
-                m2m_rev_field = _m2m_rev_field_name(instance._meta.concrete_model, model)
-                related_instances = getattr(instance, m2m_rev_field).all()
-                related_ids = [r.pk for r in related_instances]
+            m2m_rev_field = _m2m_rev_field_name(instance._meta.concrete_model, model)
+            related_instances = getattr(instance, m2m_rev_field).all()
+            related_ids = [r.pk for r in related_instances]
 
-                tmp_repr[0]['m2m_rev_model'] = force_text(model._meta)
-                tmp_repr[0]['m2m_rev_pks'] = related_ids
-                tmp_repr[0]['m2m_rev_action'] = action
-                object_json_repr = json.dumps(tmp_repr)
-            else:
-                event_type = CRUDEvent.M2M_CHANGE
+            tmp_repr[0]['m2m_rev_model'] = force_text(model._meta)
+            tmp_repr[0]['m2m_rev_pks'] = related_ids
+            tmp_repr[0]['m2m_rev_action'] = action
+            object_json_repr = json.dumps(tmp_repr)
+        else:
+            event_type = CRUDEvent.M2M_CHANGE
 
-            # user
-            try:
-                user = get_current_user()
-                # validate that the user still exists
-                user = get_user_model().objects.get(pk=user.pk)
-            except:
-                user = None
+        # user
+        try:
+            user = get_current_user()
+            # validate that the user still exists
+            user = get_user_model().objects.get(pk=user.pk)
+        except:
+            user = None
 
-            if isinstance(user, AnonymousUser):
-                user = None
+        if isinstance(user, AnonymousUser):
+            user = None
 
-            crud_event = CRUDEvent.objects.create(
-                event_type=event_type,
-                object_repr=str(instance),
-                object_json_repr=object_json_repr,
-                content_type=ContentType.objects.get_for_model(instance),
-                object_id=instance.pk,
-                user=user,
-                datetime=timezone.now(),
-                user_pk_as_string=str(user.pk) if user else user
-            )
+        crud_event = CRUDEvent.objects.create(
+            event_type=event_type,
+            object_repr=str(instance),
+            object_json_repr=object_json_repr,
+            content_type=ContentType.objects.get_for_model(instance),
+            object_id=instance.pk,
+            user=user,
+            datetime=timezone.now(),
+            user_pk_as_string=str(user.pk) if user else user
+        )
     except Exception:
         logger.exception('easy audit had an m2m-changed exception.')
 
@@ -226,34 +223,33 @@ def m2m_changed(sender, instance, action, reverse, model, pk_set, using, **kwarg
 def post_delete(sender, instance, using, **kwargs):
     """https://docs.djangoproject.com/es/1.10/ref/signals/#post-delete"""
     try:
-        with transaction.commit_on_success():
-            if not should_audit(instance):
-                return False
+        if not should_audit(instance):
+            return False
 
-            object_json_repr = serializers.serialize("json", [instance])
+        object_json_repr = serializers.serialize("json", [instance])
 
-            # user
-            try:
-                user = get_current_user()
-                # validate that the user still exists
-                user = get_user_model().objects.get(pk=user.pk)
-            except:
-                user = None
+        # user
+        try:
+            user = get_current_user()
+            # validate that the user still exists
+            user = get_user_model().objects.get(pk=user.pk)
+        except:
+            user = None
 
-            if isinstance(user, AnonymousUser):
-                user = None
+        if isinstance(user, AnonymousUser):
+            user = None
 
-            # crud event
-            crud_event = CRUDEvent.objects.create(
-                event_type=CRUDEvent.DELETE,
-                object_repr=str(instance),
-                object_json_repr=object_json_repr,
-                content_type=ContentType.objects.get_for_model(instance),
-                object_id=instance.pk,
-                user=user,
-                datetime=timezone.now(),
-                user_pk_as_string=str(user.pk) if user else user
-            )
+        # crud event
+        crud_event = CRUDEvent.objects.create(
+            event_type=CRUDEvent.DELETE,
+            object_repr=str(instance),
+            object_json_repr=object_json_repr,
+            content_type=ContentType.objects.get_for_model(instance),
+            object_id=instance.pk,
+            user=user,
+            datetime=timezone.now(),
+            user_pk_as_string=str(user.pk) if user else user
+        )
     except Exception:
         logger.exception('easy audit had a post-delete exception.')
 
