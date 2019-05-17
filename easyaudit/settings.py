@@ -13,6 +13,8 @@ from django.utils import six
 from easyaudit.models import CRUDEvent, LoginEvent, RequestEvent
 
 from django.db.models import get_model
+from django.contrib.auth import get_user_model
+
 
 def get_model_list(class_list):
     """
@@ -52,6 +54,9 @@ get_model_list(UNREGISTERED_CLASSES)
 REGISTERED_CLASSES = getattr(settings, 'DJANGO_EASY_AUDIT_REGISTERED_CLASSES', [])
 get_model_list(REGISTERED_CLASSES)
 
+# Add Django User model if enabled
+if getattr(settings, 'DJANGO_EASY_AUDIT_LOG_USER_MODEL', False):
+    REGISTERED_CLASSES.append(get_user_model())
 
 # URLs which Django Easy Audit will not log.
 # By default, all but some URL requests will be logged.
