@@ -1,15 +1,19 @@
 from importlib import import_module
 
-from django.apps import apps
+# from django.apps.registry import apps
 from django.conf import settings
+from django.contrib.admin.models import LogEntry
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session
-from django.db.migrations import Migration
-from django.db.migrations.recorder import MigrationRecorder
+# from django.db.migrations import Migration
+# from django.db.migrations.recorder import MigrationRecorder
 from django.utils import six
 
 from easyaudit.models import CRUDEvent, LoginEvent, RequestEvent
+
+from django.db.models import get_model
+from django.contrib.auth import get_user_model
 
 
 def get_model_list(class_list):
@@ -20,7 +24,9 @@ def get_model_list(class_list):
     """
     for idx, item in enumerate(class_list):
         if isinstance(item, six.string_types):
-            model_class = apps.get_model(item)
+            app_label = item.split('.')[0]
+            object_name = item.split('.')[-1]
+            model_class = get_model(app_label, object_name)
             class_list[idx] = model_class
 
 
@@ -30,20 +36,12 @@ WATCH_MODEL_EVENTS = getattr(settings, 'DJANGO_EASY_AUDIT_WATCH_MODEL_EVENTS', T
 WATCH_REQUEST_EVENTS = getattr(settings, 'DJANGO_EASY_AUDIT_WATCH_REQUEST_EVENTS', True)
 REMOTE_ADDR_HEADER = getattr(settings, 'DJANGO_EASY_AUDIT_REMOTE_ADDR_HEADER', 'REMOTE_ADDR')
 
-USER_DB_CONSTRAINT = bool(getattr(settings, 'DJANGO_EASY_AUDIT_USER_DB_CONSTRAINT', True))
-
 
 # Models which Django Easy Audit will not log.
 # By default, all but some models will be audited.
 # The list of excluded models can be overwritten or extended
 # by defining the following settings in the project.
-UNREGISTERED_CLASSES = [CRUDEvent, LoginEvent, RequestEvent, Migration, Session, Permission, ContentType, MigrationRecorder.Migration]
-
-# Import and unregister LogEntry class only if Django Admin app is installed
-if apps.is_installed('django.contrib.admin'):
-    from django.contrib.admin.models import LogEntry
-    UNREGISTERED_CLASSES += [LogEntry]
-
+UNREGISTERED_CLASSES = [CRUDEvent, LoginEvent, RequestEvent, LogEntry, Session, Permission, ContentType]
 UNREGISTERED_CLASSES = getattr(settings, 'DJANGO_EASY_AUDIT_UNREGISTERED_CLASSES_DEFAULT', UNREGISTERED_CLASSES)
 UNREGISTERED_CLASSES.extend(getattr(settings, 'DJANGO_EASY_AUDIT_UNREGISTERED_CLASSES_EXTRA', []))
 get_model_list(UNREGISTERED_CLASSES)
@@ -56,6 +54,9 @@ get_model_list(UNREGISTERED_CLASSES)
 REGISTERED_CLASSES = getattr(settings, 'DJANGO_EASY_AUDIT_REGISTERED_CLASSES', [])
 get_model_list(REGISTERED_CLASSES)
 
+# Add Django User model if enabled
+if getattr(settings, 'DJANGO_EASY_AUDIT_LOG_USER_MODEL', False):
+    REGISTERED_CLASSES.append(get_user_model())
 
 # URLs which Django Easy Audit will not log.
 # By default, all but some URL requests will be logged.
@@ -65,13 +66,6 @@ get_model_list(REGISTERED_CLASSES)
 UNREGISTERED_URLS = [r'^/admin/', r'^/static/', r'^/favicon.ico$']
 UNREGISTERED_URLS = getattr(settings, 'DJANGO_EASY_AUDIT_UNREGISTERED_URLS_DEFAULT', UNREGISTERED_URLS)
 UNREGISTERED_URLS.extend(getattr(settings, 'DJANGO_EASY_AUDIT_UNREGISTERED_URLS_EXTRA', []))
-
-
-# URLs which Django Easy Audit WILL log.
-# If the following setting is defined in the project,
-# only the listed URLs will be audited, and every other
-# URL will be excluded.
-REGISTERED_URLS = getattr(settings, 'DJANGO_EASY_AUDIT_REGISTERED_URLS', [])
 
 
 # By default all modules are listed in the admin.
@@ -99,7 +93,4 @@ for idx, callback in enumerate(CRUD_DIFFERENCE_CALLBACKS):
 # which is however much costly when many rows are involved
 TRUNCATE_TABLE_SQL_STATEMENT = getattr(settings, 'DJANGO_EASY_AUDIT_TRUNCATE_TABLE_SQL_STATEMENT', '')
 
-# Changeview filters configuration
-CRUD_EVENT_LIST_FILTER = getattr(settings, 'DJANGO_EASY_AUDIT_CRUD_EVENT_LIST_FILTER', ['event_type', 'content_type', 'user', 'datetime', ])
-LOGIN_EVENT_LIST_FILTER = getattr(settings, 'DJANGO_EASY_AUDIT_LOGIN_EVENT_LIST_FILTER', ['login_type', 'user', 'datetime', ])
-REQUEST_EVENT_LIST_FILTER = getattr(settings, 'DJANGO_EASY_AUDIT_REQUEST_EVENT_LIST_FILTER', ['method', 'user', 'datetime', ])
+from easyaudit.signals import auth_signals, model_signals, request_signals

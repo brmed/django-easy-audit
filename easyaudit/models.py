@@ -26,10 +26,9 @@ class CRUDEvent(models.Model):
     object_json_repr = models.TextField(null=True, blank=True)
     changed_fields = models.TextField(null=True, blank=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
-                             blank=True, on_delete=models.SET_NULL,
-                             )
+                             blank=True, on_delete=models.SET_NULL)
     user_pk_as_string = models.CharField(max_length=255, null=True, blank=True,
-                                         help_text='String version of the user pk')
+                                     help_text='String version of the user pk')
     datetime = models.DateTimeField(auto_now_add=True)
 
     def is_create(self):
@@ -45,7 +44,7 @@ class CRUDEvent(models.Model):
         verbose_name = 'CRUD event'
         verbose_name_plural = 'CRUD events'
         ordering = ['-datetime']
-        index_together = ['object_id', 'content_type', ]
+        # index_together = ['object_id', 'content_type', ]
 
 
 class LoginEvent(models.Model):
@@ -71,7 +70,7 @@ class LoginEvent(models.Model):
 
 
 class RequestEvent(models.Model):
-    url = models.TextField(null=False, db_index=False)
+    url = models.TextField(null=False, db_index=True)
     method = models.CharField(max_length=20, null=False, db_index=True)
     query_string = models.TextField(null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,

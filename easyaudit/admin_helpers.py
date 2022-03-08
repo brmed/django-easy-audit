@@ -52,7 +52,7 @@ class EasyAuditModelAdmin(admin.ModelAdmin):
         return False
 
     def get_urls(self):
-        info = self.model._meta.app_label, self.model._meta.model_name
+        info = self.model._meta.app_label, self.model._meta.object_name
         urls = super(EasyAuditModelAdmin, self).get_urls()
         my_urls = [
             url(r'^purge/$', self.admin_site.admin_view(self.purge), {}, name="%s_%s_purge" % info),
