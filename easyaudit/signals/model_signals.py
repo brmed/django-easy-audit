@@ -46,18 +46,19 @@ def should_audit(instance):
 def pre_save(sender, instance, raw, using, update_fields, **kwargs):
     """https://docs.djangoproject.com/es/1.10/ref/signals/#post-save"""
     if raw:
-      # Return if loading Fixtures      
+      # Return if loading Fixtures
       return
-    
+
     try:
         if not should_audit(instance):
-            return False
-        object_json_repr = serializers.serialize("json", [instance])
+                return False
+        try:
+            object_json_repr = serializers.serialize("json", [instance])
+        except Exception:
+            return None
 
-        if instance.pk is None:
-            created = True
-        else:
-            created = False
+        # Determine if the instance is a create
+        created = instance.pk is None or instance._state.adding
 
         # created or updated?
         if not created:
@@ -99,6 +100,7 @@ def pre_save(sender, instance, raw, using, update_fields, **kwargs):
             )
     except Exception:
         logger.exception('easy audit had a pre-save exception.')
+
 
 
 def post_save(sender, instance, created, raw, using, update_fields, **kwargs):
